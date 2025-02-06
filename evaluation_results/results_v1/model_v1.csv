@@ -1,0 +1,7 @@
+Model,Pipeline
+Random Forest,runs:/1b78da0367b94391b558810ba17b1660/best_pipeline
+Naive Bayes,runs:/271da4ca0b3d4e35841b59cf2b77f015/best_pipeline
+SVM,runs:/07c752ee8102464fa82b73571383925c/best_pipeline
+Logistic Regression,runs:/7e96a95d34094e22af7dad9afe84fc21/best_pipeline
+CatBoost,runs:/32ba64e14eb94c278236aca7642a4e75/best_model
+BERT,runs:/b2f1f4fb5fdf4076a7d0c5a1a97d156b/bert_model
