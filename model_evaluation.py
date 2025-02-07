@@ -10,8 +10,10 @@ from models.model_finetuning_transformer import preprocess_function
 
 # GLOBAL
 DATA_PATH = "data/test_datasets/rotten_test.csv"
-# Save path
-SAVE_PATH = "data/test_datasets/results_v2/"
+# Save path of metrics and plots
+SAVE_PATH = "evaluation_results/results_v2/"
+# Save path of predictions
+SAVE_PREDICTIONS = "data/predictions//predictions_v2.csv"
 
 # Model paths v2
 BERT = 'runs:/830d573240b84785bfc8360b0d074a13/bert_model'
@@ -21,10 +23,8 @@ RANDOM_FOREST = 'runs:/4e0f4cddc19c4094ad6648d0bc0d959c/best_pipeline'
 LOG_REG = 'runs:/84e6b11d8ceb48ff9168f1fd3ae6189d/best_pipeline'
 NAIVE_BAYES = 'runs:/4564d18622a64c7bbdeaba61929c8db5/best_pipeline'
 
-# Model paths v1
 
-
-# Dictionary of model names
+# Dictionary of full model names
 MODEL_NAMES = {
     "rf": "Random Forest",
     "nb": "Naive Bayes",
@@ -33,9 +33,26 @@ MODEL_NAMES = {
     "catboost": "CatBoost",
     "bert": "BERT"
 }
+
 # Add probability columns to data for classical models
 def add_probability_column(model, data, model_name, text_column="token"):
-    ''' Add probability column to data based on model type'''
+    """
+    Add a model-specific probability or decision-function output column to 'data' used for classical models.
+
+    1) If the model has a predict_proba method, it uses the second column for the
+       positive-class probability.
+    2) If the model has a decision_function method, it stores those values instead.
+    3) Handles exceptions if the model does not support probability predictions.
+
+    Parameters:
+        model: A trained model (usually a scikit-learn pipeline) to make probability predictions.
+        data (pd.DataFrame): The dataframe where a new probability column should be added.
+        model_name (str): Short name or key used to label the new column.
+        text_column (str): Column in 'data' containing the text or features the model consumes.
+
+    Returns:
+        pd.DataFrame: The updated dataframe with an added probability column (if applicable).
+    """
     try:
         if hasattr(model, "predict_proba"):
             # predict_proba returns an array of shape (n_samples, n_classes)
@@ -52,8 +69,17 @@ def add_probability_column(model, data, model_name, text_column="token"):
     return data
 
 # Predict using classical models
-def predict_classical(data, RANDOM_FOREST=RANDOM_FOREST, NAIVE_BAYES=NAIVE_BAYES, SVM=SVM, LOG_REG=LOG_REG):
-    ''' Apply predictions and probabilities to data using classical models '''
+def predict_classical(data):
+    """
+    Predict labels and add probabilities for multiple classical models (RF, NB, SVM, LogReg).
+
+    1) Loads models from MLflow URIs.
+    2) Predicts labels on the 'token' column.
+    3) Adds probability columns if supported.
+
+    Returns:
+        pd.DataFrame: The dataframe augmented with predictions and probabilities for each model.
+    """
     # Load models (skleanr pipelines including vectorizer)
     rf = mlflow.sklearn.load_model(RANDOM_FOREST)
     nb = mlflow.sklearn.load_model(NAIVE_BAYES)
@@ -80,8 +106,21 @@ def predict_classical(data, RANDOM_FOREST=RANDOM_FOREST, NAIVE_BAYES=NAIVE_BAYES
     return data
 
 # Predict using CatBoost
-def predict_catboost(data, CATBOOST=CATBOOST):
-    ''' Apply predictions and probabilities to data using CatBoost '''
+def predict_catboost(data):
+    """
+    Apply predictions and probabilities to data with a CatBoost model.
+
+    1) Loads the CatBoost model from MLflow.
+    2) Builds a CatBoost 'Pool' from the 'token' column.
+    3) Predicts class labels.
+    4) Tries to predict probabilities using 'predict(..., prediction_type="Probability")'.
+
+    Parameters:
+        data (pd.DataFrame): Dataset containing a 'token' column.
+
+    Returns:
+        pd.DataFrame: Dataframe augmented with CatBoost predictions and probability columns.
+    """
     # Load model
     catboost = mlflow.catboost.load_model(CATBOOST)
 
@@ -106,8 +145,20 @@ def predict_catboost(data, CATBOOST=CATBOOST):
     return data
 
 # Predict using BERT
-def predict_bert(data, BERT=BERT):
-    ''' Apply predictions and probabilities to data using BERT '''
+def predict_bert(data):
+    """
+    Apply predictions and probabilities to data using BERT model.
+
+    1) Loads a BERT pipeline from MLflow Transformers.
+    2) Preprocesses the data using custom 'preprocess_function'.
+    3) Predicts labels (0 or 1) and extracts probabilities for each row.
+
+    Parameters:
+        data (pd.DataFrame): Dataset containing a 'text' column or one suitable for transformation.
+
+    Returns:
+        pd.DataFrame: Dataframe augmented with BERT predictions and probability columns.
+    """
     # Load model
     bert = mlflow.transformers.load_model(BERT)
 
@@ -128,7 +179,20 @@ def predict_bert(data, BERT=BERT):
     return data
 
 def appy_predictions(data_path):
-    ''' Apply predictions of all models to data and save to disk '''
+    """
+    Apply all model predictions (classical + CatBoost + BERT) to a dataset,
+    and save the augmented data with predictions to a CSV file.
+
+    1) Reads the CSV from 'data_path'.
+    2) Passes the data through 'predict_classical', 'predict_catboost', and 'predict_bert'.
+    3) Saves the resulting dataframe with new columns for each model's predictions and probabilities/confidence.
+
+    Parameters:
+        data_path (str): File path to the CSV file containing at least 'token' and 'text' columns.
+
+    Returns:
+        pd.DataFrame: Dataframe with appended prediction and probability columns from all models.
+    """
     # Load data
     data = pd.read_csv(data_path)
 
@@ -142,12 +206,20 @@ def appy_predictions(data_path):
     data = predict_bert(data)
 
     # Save data
-    data.to_csv(f"{SAVE_PATH}predictions.csv", index=False)
+    data.to_csv(SAVE_PREDICTIONS, index=False)
     return data
 
 
 def generate_classification_report_csv(y_true, y_pred, model_name, save_path):
-    ''' Generate classification report and save to CSV. Input: y_true, y_pred, model_name, save_path '''
+    """
+    Generate and save a classification report (precision, recall, f1, etc.) to CSV.
+
+    Parameters:
+        y_true (array-like): Ground truth labels.
+        y_pred (array-like): Predicted labels from the model.
+        model_name (str): Short name or key for the model, used in output filename.
+        save_path (str): Directory in which the CSV report will be saved.
+    """
     #  Create report
     report_dict = classification_report(
         y_true,
@@ -162,8 +234,22 @@ def generate_classification_report_csv(y_true, y_pred, model_name, save_path):
     # Save to CSV
     report_df.to_csv(f"{save_path}report/{model_name}_classification_report.csv", index=True)
 
-def evaluate_predictions(data_path="predictions.csv", data=None, save_path=SAVE_PATH, plot_confusion_matrix=True, plot_roc_curve=True):
-    ''' Evaluate predictions and save metrics to disk. If data is None, load from data_path. If plot_confusion_matrix is True or plot_roc_curve is True, directory in save_path is requiered. '''
+def evaluate_predictions(data=None, data_path="predictions.csv", save_path=SAVE_PATH, plot_confusion_matrix=True, plot_roc_curve=True):
+    """
+    Evaluate model predictions and save metrics (accuracy, F1, precision, recall),
+    as well as artifacts (confusion matrices, ROC curves, classification reports).
+
+    1) Either use the provided 'data' dataframe or load from 'data_path'.
+    2) Iterates over each model in MODEL_NAMES to compute metrics.
+    3) Saves metrics, confusion matrices, ROC curves, and classification reports.
+
+    Parameters:
+        data (pd.DataFrame, optional): Dataframe with true and predicted labels. If None, loads CSV.
+        data_path (str): Path to the CSV file if 'data' is not provided.
+        save_path (str): Folder to which all evaluation files are saved.
+        plot_confusion_matrix (bool): Whether to create and save confusion matrices.
+        plot_roc_curve (bool): Whether to create and save ROC curves.
+    """
     if data is None:
         data = pd.read_csv(data_path)
 

@@ -23,16 +23,19 @@ import numpy as np
 
 ############################################################################################################
 ## GLOBAL
-N_JOBS = 7
-N_TRIALS = 100
+N_JOBS = 7 # Number of parallel jobs
+N_TRIALS = 100 # Number of trials to run
 # Models
-MODELS = ["random_forest"] # Options: ["log_reg", "random_forest", "support_vector", "naive_bayes"]
+MODELS = ["random_forest"]
+# Options: ["log_reg", "random_forest", "support_vector", "naive_bayes"] can be all at once
+
 # Vectorizers:
-VECTORIZER = ["count", "tfidf"] # Options: ["count", "tfidf"]
+VECTORIZER = ["count", "tfidf"]
+# Options: ["count", "tfidf"]
 
 # PATHS
-PATH_DATA = "../data/preprocessed/split_data_v2"
-MLFLOW_PATH = "../mlruns"
+PATH_DATA = "../data/preprocessed/split_data_v2" # Path to the preprocessed data
+MLFLOW_PATH = "../mlruns" # Path to the mlflow tracking directory
 MLFLOW_NAME = f"{"_".join(MODELS)}_v2"
 
 ###########################################################################################################
@@ -42,6 +45,11 @@ mlflow.set_tracking_uri(MLFLOW_PATH)
 
 ############## Build the pipeline with different vectorizers and models ###############################
 def build_pipeline(trial):
+    """
+    Build a scikit-learn Pipeline consisting of a vectorizer (CountVectorizer
+    or TfidfVectorizer) and a classifier (chosen from a set of options).
+    Hyperparameters ranges can be set here.
+    """
     # Choose vectorizer
     vectorizer_name = trial.suggest_categorical("vectorizer", VECTORIZER)
 
@@ -66,39 +74,48 @@ def build_pipeline(trial):
         max_features = trial.suggest_int("tfidf__max_features", 4000, 10000, log=True)
         vectorizer = TfidfVectorizer(ngram_range=ngram_range, analyzer="word", max_features=max_features)
     else:
+        # Error handling
         raise ValueError(f"Invalid vectorizer name: {vectorizer_name}")
 
 
     # Choose models
     classifier_name = trial.suggest_categorical("classifier", MODELS)
 
+    # Hyperparameters to tune for models
+    # Logistic Regression
     if classifier_name == "log_reg":
-        # Test different hyperparameters
+        # Hyperparameters to tune
         C = trial.suggest_float("log_reg__C", 1e-3, 1e1, log=True)
         penalty = trial.suggest_categorical("log_reg__penalty", ["l1", "l2"])
         max_iter = trial.suggest_int("log_reg__max_iter", 100, 1000)
 
+        # Create the classifier
         classifier = LogisticRegression(C=C, solver="saga", penalty=penalty, max_iter=max_iter, random_state=42)
 
+    # Random Forest
     elif classifier_name == "random_forest":
-        # Test different hyperparameters
+        # Hyperparameters to tune
         n_estimators = trial.suggest_int("random_forest__n_estimators", 100, 1000, log=True)
         max_depth = trial.suggest_int("random_forest__max_depth", 3, 50)
         min_samples_split = trial.suggest_int("random_forest__min_samples_split", 2, 20)
         criterion = trial.suggest_categorical("random_forest__criterion", ["gini", "entropy"])
         max_features = trial.suggest_categorical("random_forest__max_features", ["sqrt", "log2", None])
 
+        # Create the classifier
         classifier = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth,
                                             min_samples_split=min_samples_split, criterion=criterion, max_features=max_features, random_state=42)
 
+    # Naive Bayes
     elif classifier_name == "naive_bayes":
-        # Test different hyperparameters
+        # Hyperparameters to tune
         alpha = trial.suggest_float("naive_bayes__alpha", 1e-3, 1e2, log=True)
 
+        # Create the classifier
         classifier = MultinomialNB(alpha=alpha)
 
+    # Support Vector Machine
     elif classifier_name == "support_vector":
-        # Test different hyperparameters
+        # Hyperparameters to tune
         C = trial.suggest_float("support_vector__C", 1e-2, 100, log=True)
         kernel = trial.suggest_categorical("support_vector__kernel", ["linear", "rbf"])
         # Kernel-specific parameters
@@ -106,27 +123,40 @@ def build_pipeline(trial):
             gamma = trial.suggest_float("support_vector__gamma", 1e-5, 1, log=True)
         # Class weight for imbalanced datasets
         class_weight = trial.suggest_categorical("support_vector__class_weight", [None, "balanced"])
-        # Define the classifier
+
+        # Create the classifier
         classifier = SVC(C=C,kernel=kernel,shrinking=True,class_weight=class_weight, probability=False,
             gamma=gamma if kernel=="rbf" else "scale",
             random_state=42, cache_size=1024)
-    else: # Space for additional models
+
+    else: # Error handling
         raise ValueError(f"Invalid model name: {classifier_name}")
 
-    # Build the pipeline
+
+    # Build the pipeline (vectorizer -> classifier, memory to cache for faster computation)
     pipeline = Pipeline([
         ("vect", vectorizer),
         ("clf", classifier)],
         memory="cache")
-
     return pipeline
 
 ############################ Run optuna and log using MLflow ############################################
 def main():
-    # Load data
+    """
+    Main function to perform hyperparameter optimization on text classification
+    models using Optuna, while logging runs and artifacts to MLflow.
+
+    1) Loads train, validation, and test data from disk.
+    2) Defines an Optuna objective function that builds, trains, and evaluates pipelines.
+    3) Runs the Optuna study to find the best hyperparameters.
+    4) Re-trains the best pipeline on the combined (train+val) data and evaluates on the test set.
+    5) Logs all key metrics and artifacts (e.g. confusion matrix) to MLflow.
+    """
+    # Load data sets
     X_train, X_val, X_test, y_train, y_val, y_test = load_data(val_set=True, path=PATH_DATA, X_col="token")
 
 ############################# Nested objective function to avoid reloading data##########################
+    # Nested objective function to prevent having to reload data. Train model and evaluate on validation set. Logs metrics for each model.
     def objective(trial):
         # Create pipeline
         pipeline = build_pipeline(trial)
@@ -165,8 +195,10 @@ def main():
 
     # Name experiment using date and time to distinguish between runs
     mlflow.set_experiment(f"{MLFLOW_NAME}_{time.strftime('%Y-%m-%d-%H-%M-%S')}")
+
     # Start a "parent" MLflow run to encompass all trials
     with mlflow.start_run(run_name="Optuna_Classical_Model_Finetuning") as run:
+
         # Create pruner to stop unpromising trials early
         pruner = optuna.pruners.HyperbandPruner(min_resource=1, reduction_factor=3)
 
@@ -182,8 +214,6 @@ def main():
 
         # Retrieve the best trial
         best_trial = study.best_trial
-        print("Best Trial ID:", best_trial.number)
-        print("Best Trial Value (Accuracy):", best_trial.value)
 
         # Log the best trial info in the parent run
         mlflow.log_param("best_trial_id", best_trial.number)
@@ -192,6 +222,7 @@ def main():
 
         # reconstruct the best pipeline using best_trial.params
         best_pipeline = build_pipeline(best_trial)
+
         # Cobine train and validation set
         X_train = pd.concat([X_train, X_val])
         y_train = np.concatenate([y_train, y_val])

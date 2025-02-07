@@ -15,7 +15,6 @@ import os
 import torch
 from mlflow.models.signature import infer_signature
 
-#############################################################################################
 # GLOBAL
 N_JOBS = 1 #Only 1 as GPU training
 N_TRIALS = 20
@@ -27,7 +26,13 @@ MLFLOW_PATH = "../mlruns"
 
 # Function to clear GPU memory as I get CUDA out of memory errors
 def clear_memory():
-    ''' Clear GPU memory to avoid CUDA out of memory errors '''
+    """
+    Clear GPU memory to avoid CUDA out-of-memory errors.
+
+    1) Frees cached GPU memory (if available).
+    2) Collects inter-process communication resources.
+    3) Calls Python's garbage collector.
+    """
     if torch.cuda.is_available():
         torch.cuda.empty_cache()  # Release cached memory
         torch.cuda.ipc_collect()  # Collect inter-process communication resources
@@ -36,7 +41,12 @@ def clear_memory():
 
     # Use CatBoost gradient boosting model for finetuning
 def build_model(trial):
-    ''' Build CatBoost model with hyperparameters for optimization, hyperparameter ranges can be set in this function '''
+    """
+    Build and configure a CatBoostClassifier model for hyperparameter optimization.
+
+    1) Suggests a range of hyperparameters from Optuna's search space.
+    2) Initializes a CatBoostClassifier with those hyperparameters, using GPU.
+    """
     # Test different hyperparameters
     depth = trial.suggest_int("depth", 4, 12)
     learning_rate = trial.suggest_float("learning_rate", 1e-3, 0.3, log=True)
@@ -65,7 +75,16 @@ def build_model(trial):
     return model
 
 def main():
-    ''' Main function to run optuna optimization for CatBoost model and evaluate the best model on the test set.'''
+    """
+    Main function to run Optuna hyperparameter optimization and evaluate a
+    CatBoost model on a final test set.
+
+    1) Loads training, validation, and test data.
+    2) Defines an Optuna objective function that trains and validates models.
+    3) Uses MLflow to track all runs, hyperparameters, and metrics.
+    4) Re-trains the best model on combined (train+val) data and evaluates on test.
+    5) Logs final metrics and artifacts (such as a confusion matrix) to MLflow.
+    """
     # Set MLflow
     mlflow.set_tracking_uri(MLFLOW_PATH)
 
@@ -77,9 +96,18 @@ def main():
     val_pool = Pool(X_val, y_val, text_features=[0])
     test_pool = Pool(X_test, y_test, text_features=[0])
 
+
     ####################### Nested objective function ########################################################
     def objective(trial):
-        '''Nested objective function to prevent having to reload data. Train model and evaluate on validation set. Logs metrics for each model.'''
+        """
+        Nested objective function for Optuna to train and validate the model.
+
+        1) Clears GPU memory before each trial.
+        2) Builds a CatBoost model with sampled hyperparameters.
+        3) Trains the model on train_pool and evaluates on val_pool.
+        4) Logs metrics and hyperparameters to MLflow.
+        5) Returns the accuracy score as the primary optimization metric.
+        """
         # Clear memory
         clear_memory()
 
@@ -120,7 +148,9 @@ def main():
             del model
             clear_memory()
 
+
     ####################### Run optuna#########################################################
+
     # Set MLflow experiment
     mlflow.set_experiment(f"CatBoost_v2_{time.strftime('%Y-%m-%d-%H-%M-%S')}")
 
