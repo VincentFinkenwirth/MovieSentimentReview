@@ -1,2 +1,0 @@
-A license file could not be found for the 'C:\python\SpamDetection\mlruns\348789547859170955\b2f1f4fb5fdf4076a7d0c5a1a97d156b\artifacts\bert_model\model' repository. 
-To ensure that you are in compliance with the license requirements for this model, please visit the model repository here: https://huggingface.co/C:\python\SpamDetection\mlruns\348789547859170955\b2f1f4fb5fdf4076a7d0c5a1a97d156b\artifacts\bert_model\model
