@@ -169,6 +169,7 @@ def main():
 
                 # Evaluate pipeline
                 accuracy = accuracy_score(y_val, y_pred)
+                # Precision, recall, and F1 score for one class(not required for optimization, but may be useful for comparison between trials)
                 precision = precision_score(y_val, y_pred, zero_division=0)
                 recall = recall_score(y_val, y_pred)
                 f1 = f1_score(y_val, y_pred)

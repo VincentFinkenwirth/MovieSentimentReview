@@ -5,8 +5,7 @@ from sklearn.metrics import make_scorer, accuracy_score, precision_score, recall
 from tools.data_combination import load_data
 from tools.viszualizer import  plot_confusion_matrix
 import time
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.pipeline import Pipeline
+
 
 import gc
 import numpy as np
@@ -17,10 +16,13 @@ from mlflow.models.signature import infer_signature
 
 # GLOBAL
 N_JOBS = 1 #Only 1 as GPU training
-N_TRIALS = 20
+N_TRIALS = 100
 #PATHS
 PATH_DATA = "../data/preprocessed/split_data_v2"
 MLFLOW_PATH = "../mlruns"
+
+# Datataype "text" or "token"
+DATATYPE = "text"
 
 ############################################################################################
 
@@ -89,7 +91,7 @@ def main():
     mlflow.set_tracking_uri(MLFLOW_PATH)
 
     # Load data
-    X_train, X_val, X_test, y_train,y_val, y_test = load_data(path=PATH_DATA, val_set=True, X_col="token")
+    X_train, X_val, X_test, y_train,y_val, y_test = load_data(path=PATH_DATA, val_set=True, X_col=DATATYPE)
 
     #create pool to use catboost with text data instead of classical vectorizer
     train_pool = Pool(X_train, y_train, text_features=[0])

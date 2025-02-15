@@ -73,7 +73,7 @@ def plot_confusion_matrix(y_true, y_pred, model_name=None, class_names=None, inc
 
 def plot_roc_curve(y_true, y_proba, model_name):
     """
-       Plot the ROC curve for a binary classifier's probability predictions.
+       Plot the ROC curve for classifier's probability predictions.
 
        1) Uses roc_curve and roc_auc_score from sklearn to compute the FPR and TPR.
        2) Plots the ROC curve with AUC annotation in the legend.
@@ -106,4 +106,47 @@ def plot_roc_curve(y_true, y_proba, model_name):
     plt.legend(loc="lower right")
     plt.tight_layout()
 
+    return plt
+
+
+def plot_summary_roc(data, models=None):
+    """
+    Plot the ROC curve for multiple models on the same plot.
+
+    1) Extracts the true labels and predicted probabilities for each model.
+    2) Calls plot_roc_curve for each model and plots them together.
+    3) Includes a diagonal line representing random chance.
+
+    Parameters:
+        data (dict): A dictionary containing the true labels and predicted probabilities
+                     for each model.
+        models (list, optional): A list of model to include. Defaults to
+                                    ["rf", "log_reg", "nb", "catboost", "bert", "svm"].
+
+    Returns:
+        matplotlib.pyplot: The pyplot module with the ROC curve plot.
+    """
+    # Default models if none provided
+    if models is None:
+        models = ["rf", "log_reg", "nb", "catboost", "bert", "svm"]
+    # Get true values
+    y_true = data["label"]
+    # Create the plot
+    plt.figure(figsize=(8, 7))
+    # Plot the ROC curve for each model
+    for model_name in models:
+        # Get the probabilities
+        y_proba = data[f"{model_name}_proba"]
+        # Plot the ROC curve
+        fpr, tpr, thresholds = roc_curve(y_true, y_proba)
+        auc_score = roc_auc_score(y_true, y_proba)
+        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc_score:.2f})")
+    # Plot a random-chance baseline
+    plt.plot([0, 1], [0, 1], 'k--', label="Random Chance")
+    # Set plot labels and title
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curves")
+    plt.legend(loc="lower right")
+    plt.tight_layout()
     return plt

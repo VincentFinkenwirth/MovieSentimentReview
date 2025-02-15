@@ -1,11 +1,8 @@
 import pandas as pd
-import os
 import mlflow
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score, classification_report
 from tools.viszualizer import plot_confusion_matrix, plot_roc_curve
-import joblib as jb
 from catboost import Pool
-import numpy as np
 from models.model_finetuning_transformer import preprocess_function
 
 # GLOBAL
@@ -18,7 +15,7 @@ SAVE_PREDICTIONS = "data/predictions//predictions_v2.csv"
 # Model paths v2
 BERT = 'runs:/830d573240b84785bfc8360b0d074a13/bert_model'
 SVM = 'runs:/6ae2878823714c789e4bffa97a621683/best_pipeline'
-CATBOOST = 'runs:/7d34cc89d2b4437da68b008c9dd982a4/catboost_model'
+CATBOOST = 'runs:/1aa7d53b20e7470998d26ca603bfccc3/catboost_model'
 RANDOM_FOREST = 'runs:/4e0f4cddc19c4094ad6648d0bc0d959c/best_pipeline'
 LOG_REG = 'runs:/84e6b11d8ceb48ff9168f1fd3ae6189d/best_pipeline'
 NAIVE_BAYES = 'runs:/4564d18622a64c7bbdeaba61929c8db5/best_pipeline'
@@ -106,7 +103,7 @@ def predict_classical(data):
     return data
 
 # Predict using CatBoost
-def predict_catboost(data):
+def predict_catboost(data, datatype="text"):
     """
     Apply predictions and probabilities to data with a CatBoost model.
 
@@ -116,7 +113,8 @@ def predict_catboost(data):
     4) Tries to predict probabilities using 'predict(..., prediction_type="Probability")'.
 
     Parameters:
-        data (pd.DataFrame): Dataset containing a 'token' column.
+        data (pd.DataFrame): Dataset to predict on.
+        datatype (str): Column name in 'data' containing the text data. Default is 'text', option to use 'token'.
 
     Returns:
         pd.DataFrame: Dataframe augmented with CatBoost predictions and probability columns.
@@ -125,7 +123,7 @@ def predict_catboost(data):
     catboost = mlflow.catboost.load_model(CATBOOST)
 
     # Turn data into pool
-    data_pool = Pool(data["token"], text_features=[0])
+    data_pool = Pool(data[datatype], text_features=[0])
 
     # Predict
     data["catboost_pred"] = catboost.predict(data_pool)
@@ -234,7 +232,7 @@ def generate_classification_report_csv(y_true, y_pred, model_name, save_path):
     # Save to CSV
     report_df.to_csv(f"{save_path}report/{model_name}_classification_report.csv", index=True)
 
-def evaluate_predictions(data=None, data_path="predictions.csv", save_path=SAVE_PATH, plot_confusion_matrix=True, plot_roc_curve=True):
+def evaluate_predictions(data=None, data_path="predictions.csv", save_path=SAVE_PATH, plot_cm=True, plot_roc=True):
     """
     Evaluate model predictions and save metrics (accuracy, F1, precision, recall),
     as well as artifacts (confusion matrices, ROC curves, classification reports).
@@ -247,8 +245,8 @@ def evaluate_predictions(data=None, data_path="predictions.csv", save_path=SAVE_
         data (pd.DataFrame, optional): Dataframe with true and predicted labels. If None, loads CSV.
         data_path (str): Path to the CSV file if 'data' is not provided.
         save_path (str): Folder to which all evaluation files are saved.
-        plot_confusion_matrix (bool): Whether to create and save confusion matrices.
-        plot_roc_curve (bool): Whether to create and save ROC curves.
+        plot_cm (bool): Whether to create and save confusion matrices.
+        plot_roc (bool): Whether to create and save ROC curves.
     """
     if data is None:
         data = pd.read_csv(data_path)
@@ -256,13 +254,13 @@ def evaluate_predictions(data=None, data_path="predictions.csv", save_path=SAVE_
     # temporary storage
     final = []
 
-    #Loop through models
+    # Loop through models
     for model in ["rf", "nb", "svm", "log_reg", "catboost", "bert"]:
         # Compute metrics
         accuracy = accuracy_score(data["label"], data[f"{model}_pred"])
-        precision = precision_score(data["label"], data[f"{model}_pred"])
-        recall = recall_score(data["label"], data[f"{model}_pred"])
-        f1 = f1_score(data["label"], data[f"{model}_pred"])
+        precision = precision_score(data["label"], data[f"{model}_pred"], average="macro")
+        recall = recall_score(data["label"], data[f"{model}_pred"], average="macro")
+        f1 = f1_score(data["label"], data[f"{model}_pred"], average="macro")
         # Add to final
         final.append(([model, accuracy, f1, precision, recall]))
 
@@ -270,20 +268,24 @@ def evaluate_predictions(data=None, data_path="predictions.csv", save_path=SAVE_
         generate_classification_report_csv(data["label"], data[f"{model}_pred"], model_name=model, save_path=save_path)
 
         # Plot confusion matrix and save to confusion matrix folder
-        if plot_confusion_matrix:
-            cm = plot_confusion_matrix(data["label"], data[f"{model}_pred"], model_name=MODEL_NAMES[model], include_percentages=True)
+        if plot_cm:
+            cm = plot_confusion_matrix(data["label"], data[f"{model}_pred"],
+                                       model_name=MODEL_NAMES[model], include_percentages=True)
             cm.savefig(f"{save_path}confusion_matrix/{model}_confusion_matrix.png")
 
         # Plot ROC curve and save to roc curve folder
-        if plot_roc_curve:
+        if plot_roc:
             roc = plot_roc_curve(data["label"], data[f"{model}_proba"], model_name=MODEL_NAMES[model])
             roc.savefig(f"{save_path}roc/{model}_roc_curve.png")
 
     metrics_df = pd.DataFrame(final, columns=["Model", "Accuracy", "F1", "Precision", "Recall"],)
-    metrics_df.to_csv(f"{save_path}metrics.csv", index=True)
+    metrics_df.to_csv(f"{save_path}metrics.csv", index=False)
     print(metrics_df)
 
 
 if __name__ == "__main__":
-    data = appy_predictions(DATA_PATH)
-    evaluate_predictions(data=data, save_path=SAVE_PATH)
+    # Apply predictions to test data
+    #appy_predictions(DATA_PATH)
+    # Evaluate predictions
+    data = pd.read_csv("data/predictions/predictions_v2.csv")
+    evaluate_predictions(data=data, save_path=SAVE_PATH, plot_cm=True, plot_roc=True)
